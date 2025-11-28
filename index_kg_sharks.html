@@ -436,12 +436,13 @@
           geo_timezone: geoData?.timezone ?? null,
 
           // ========== PERFORMANCE ==========
-          page_load_time: performanceData.page_load_time,
-          dom_ready_time: performanceData.dom_ready_time,
-          dns_time: performanceData.dns_time,
-          tcp_time: performanceData.tcp_time,
-          request_time: performanceData.request_time,
-          response_time: performanceData.response_time,
+          // ВАЖНО: Firebase не принимает undefined, используем null
+          page_load_time: performanceData.page_load_time ?? null,
+          dom_ready_time: performanceData.dom_ready_time ?? null,
+          dns_time: performanceData.dns_time ?? null,
+          tcp_time: performanceData.tcp_time ?? null,
+          request_time: performanceData.request_time ?? null,
+          response_time: performanceData.response_time ?? null,
 
           // ========== STATE ==========
           button_clicked: false,
