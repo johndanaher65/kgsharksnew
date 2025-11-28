@@ -220,24 +220,37 @@
   }
 
   /**
-   * Получить IP адрес пользователя (с fallback)
-   * ВАЖНО: Это не 100% надежно, но лучше чем ничего
+   * Получить IP адрес пользователя (с fallback через Promise.race)
+   * Запускаем ВСЕ API параллельно, берем первый успешный ответ
+   * Это БЫСТРЕЕ чем последовательные попытки!
    */
   async function getClientIP() {
+    const apis = [
+      { url: 'https://api.ipify.org?format=json', parser: (d) => d.ip },
+      { url: 'https://ipinfo.io/json', parser: (d) => d.ip },
+      { url: 'https://api.ip.sb/jsonip', parser: (d) => d.ip }
+    ];
+
+    // Создаем промисы для всех API
+    const promises = apis.map(api =>
+      fetch(api.url, { method: 'GET', cache: 'no-cache' })
+        .then(r => {
+          if (!r.ok) throw new Error('API failed');
+          return r.json();
+        })
+        .then(data => {
+          const ip = api.parser(data);
+          if (!ip) throw new Error('No IP in response');
+          return ip;
+        })
+    );
+
     try {
-      const response = await fetch('https://api.ipify.org?format=json', {
-        method: 'GET',
-        cache: 'no-cache'
-      });
-
-      if (!response.ok) {
-        throw new Error('IP API failed');
-      }
-
-      const data = await response.json();
-      return data.ip || null;
+      // Promise.any - берем ПЕРВЫЙ успешный результат
+      const ip = await Promise.any(promises);
+      return ip;
     } catch (error) {
-      console.warn('Failed to get IP address:', error);
+      console.warn('All IP APIs failed:', error);
       return null;
     }
   }
@@ -299,6 +312,9 @@
     const urlParams = new URLSearchParams(window.location.search);
     return urlParams.get(name);
   }
+
+  // ========== ВРЕМЯ ЗАГРУЗКИ СТРАНИЦЫ ==========
+  const PAGE_LOAD_TIME = Date.now();
   </script>
 
   <script type="module">
@@ -317,6 +333,24 @@
 
     const app = initializeApp(firebaseConfig);
     const database = getDatabase(app);
+
+    /**
+     * Логирование ошибок в Firebase (асинхронно, не блокирует основной поток)
+     * Записывает в отдельную ветку errors/
+     */
+    function logError(errorType, errorMessage, extraData = {}) {
+      // Fire and forget - не ждем результата
+      const errorId = `${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+      set(ref(database, `kgsharks_errors/${errorId}`), {
+        error_type: errorType,
+        error_message: errorMessage,
+        timestamp: Date.now(),
+        timestamp_readable: new Date().toISOString(),
+        url: window.location.href,
+        user_agent: navigator.userAgent,
+        ...extraData
+      }).catch(() => {}); // Молча игнорируем ошибки логирования
+    }
 
     function generateShortId() {
       return Math.random().toString(36).substring(2, 10);
@@ -470,6 +504,7 @@
         return true;
       } catch (error) {
         console.error('❌ Error saving to Firebase:', error);
+        logError('firebase_save', error.message, { short_id: shortId, tracking_id: trackingId });
         return false;
       }
     }
@@ -480,17 +515,24 @@
         const startParameter = startMatch ? startMatch[1] : 'NO_START_PARAM';
         const linkMatches = (startParameter === shortId);
 
+        // Вычисляем время на странице
+        const timeOnPageMs = Date.now() - PAGE_LOAD_TIME;
+        const timeOnPageSeconds = Math.round(timeOnPageMs / 1000);
+
         await update(ref(database, `fbclids/${shortId}`), {
           button_clicked: true,
           click_time: Date.now(),
           click_time_readable: new Date().toISOString(),
           telegram_link: telegramLink,
           start_parameter: startParameter,
-          link_matches: linkMatches
+          link_matches: linkMatches,
+          time_on_page_ms: timeOnPageMs,
+          time_on_page_seconds: timeOnPageSeconds
         });
         return true;
       } catch (error) {
         console.error('Error tracking button click:', error);
+        logError('button_click', error.message, { short_id: shortId });
         return false;
       }
     }
