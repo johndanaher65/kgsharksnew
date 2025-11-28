@@ -290,14 +290,18 @@
 
   /**
    * Получить Performance метрики
+   * ИСПРАВЛЕНО: проверяем что значения валидны (не 0)
    */
   function getPerformanceMetrics() {
     if (!performance.timing) return {};
 
     const timing = performance.timing;
+    const navStart = timing.navigationStart;
+
     return {
-      page_load_time: timing.loadEventEnd - timing.navigationStart,
-      dom_ready_time: timing.domContentLoadedEventEnd - timing.navigationStart,
+      // Если loadEventEnd еще 0 (страница не загружена) - возвращаем null
+      page_load_time: timing.loadEventEnd > 0 ? timing.loadEventEnd - navStart : null,
+      dom_ready_time: timing.domContentLoadedEventEnd > 0 ? timing.domContentLoadedEventEnd - navStart : null,
       dns_time: timing.domainLookupEnd - timing.domainLookupStart,
       tcp_time: timing.connectEnd - timing.connectStart,
       request_time: timing.responseEnd - timing.requestStart,
@@ -314,7 +318,8 @@
   }
 
   // ========== ВРЕМЯ ЗАГРУЗКИ СТРАНИЦЫ ==========
-  const PAGE_LOAD_TIME = Date.now();
+  // Используем window чтобы переменная была доступна в module script
+  window.PAGE_LOAD_TIME = Date.now();
   </script>
 
   <script type="module">
