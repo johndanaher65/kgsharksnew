@@ -424,15 +424,16 @@
           do_not_track: browserData.do_not_track,
 
           // ========== IP & GEO (если доступны) ==========
-          ip_address: ipAddress,
-          country: geoData?.country,
-          country_code: geoData?.country_code,
-          city: geoData?.city,
-          region: geoData?.region,
-          postal_code: geoData?.postal_code,
-          geo_latitude: geoData?.latitude,
-          geo_longitude: geoData?.longitude,
-          geo_timezone: geoData?.timezone,
+          // ВАЖНО: Firebase не принимает undefined, используем null
+          ip_address: ipAddress ?? null,
+          country: geoData?.country ?? null,
+          country_code: geoData?.country_code ?? null,
+          city: geoData?.city ?? null,
+          region: geoData?.region ?? null,
+          postal_code: geoData?.postal_code ?? null,
+          geo_latitude: geoData?.latitude ?? null,
+          geo_longitude: geoData?.longitude ?? null,
+          geo_timezone: geoData?.timezone ?? null,
 
           // ========== PERFORMANCE ==========
           page_load_time: performanceData.page_load_time,
