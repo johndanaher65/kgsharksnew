@@ -72,7 +72,11 @@
   s.parentNode.insertBefore(t,s)}(window, document,'script',
   'https://connect.facebook.net/en_US/fbevents.js');
 
-  fbq('init', '855911536991991');
+  // ОТКЛЮЧАЕМ автоматические события чтобы избежать дублей
+  fbq('init', '855911536991991', {
+    autoConfig: false,
+    disablePushState: true
+  });
   fbq('track', 'PageView');
   </script>
   <noscript>
