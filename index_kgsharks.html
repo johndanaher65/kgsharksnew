@@ -123,14 +123,8 @@
    * ВАЖНО: Работает и для fbclid И для brid параметров!
    */
   function getFacebookClickCookie() {
-    const cookies = document.cookie.split('; ');
-    for (let cookie of cookies) {
-      if (cookie.startsWith('_fbc=')) {
-        return cookie.substring(5);
-      }
-    }
-
-    // Если _fbc не существует, создаем его из fbclid ИЛИ brid
+    // Если в URL есть свежий fbclid/brid, он важнее старого _fbc cookie.
+    // Иначе тесты и повторные заходы могут сохранить старый мусорный fbc.
     const urlParams = new URLSearchParams(window.location.search);
     const fbclid = urlParams.get('fbclid');
     const brid = urlParams.get('brid');
