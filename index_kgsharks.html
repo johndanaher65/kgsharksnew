@@ -332,7 +332,10 @@
 
     const app = initializeApp(firebaseConfig);
     const database = getDatabase(app);
+    const LAST_AD_STORAGE_KEY = 'kgsharks_last_ad_data';
     let currentFirebaseData = null;
+    let currentTrackingId = null;
+    let currentParameterType = null;
 
     /**
      * Логирование ошибок в Firebase (асинхронно, не блокирует основной поток)
@@ -354,6 +357,56 @@
 
     function generateShortId() {
       return Math.random().toString(36).substring(2, 10);
+    }
+
+    function saveLastAdSnapshot(shortId, trackingId, parameterType, firebaseData) {
+      if (!shortId || !firebaseData) {
+        return;
+      }
+      try {
+        localStorage.setItem(LAST_AD_STORAGE_KEY, JSON.stringify({
+          short_id: shortId,
+          tracking_id: trackingId || firebaseData.fbclid_original || null,
+          parameter_type: parameterType || firebaseData.parameter_type || null,
+          firebase_data: firebaseData,
+          updated_at: new Date().toISOString()
+        }));
+      } catch (error) {
+        console.warn('Could not save last advertising data in browser:', error);
+      }
+    }
+
+    function loadLastAdSnapshot() {
+      try {
+        const raw = localStorage.getItem(LAST_AD_STORAGE_KEY);
+        if (!raw) {
+          return null;
+        }
+        const snapshot = JSON.parse(raw);
+        const shortId = typeof snapshot?.short_id === 'string' ? snapshot.short_id.trim() : '';
+        const firebaseData = snapshot?.firebase_data;
+        if (!/^[a-z0-9]{6,32}$/i.test(shortId)
+            || !firebaseData
+            || typeof firebaseData !== 'object'
+            || !firebaseData.fbclid_original) {
+          localStorage.removeItem(LAST_AD_STORAGE_KEY);
+          return null;
+        }
+        return {
+          shortId: shortId,
+          trackingId: snapshot.tracking_id || firebaseData.fbclid_original,
+          parameterType: snapshot.parameter_type || firebaseData.parameter_type || 'fbclid',
+          firebaseData: firebaseData
+        };
+      } catch (error) {
+        console.warn('Could not load last advertising data from browser:', error);
+        try {
+          localStorage.removeItem(LAST_AD_STORAGE_KEY);
+        } catch (_) {
+          // localStorage may be unavailable in private or restricted browser mode.
+        }
+        return null;
+      }
     }
 
     /**
@@ -484,6 +537,9 @@
           has_focus: document.hasFocus()
         };
         currentFirebaseData = firebaseData;
+        currentTrackingId = trackingId;
+        currentParameterType = paramType;
+        saveLastAdSnapshot(shortId, trackingId, paramType, firebaseData);
 
         // Сохраняем в Firebase с timeout
         const savePromise = set(ref(database, `kgsharks_fbclids/${shortId}`), firebaseData);
@@ -512,6 +568,13 @@
 
     async function trackButtonClick(shortId, telegramLink) {
       try {
+        if (!currentFirebaseData && currentTrackingId) {
+          await saveFbclid(shortId, currentTrackingId, currentParameterType || 'fbclid');
+        }
+        if (!currentFirebaseData) {
+          throw new Error('Advertising snapshot is unavailable');
+        }
+
         const startMatch = telegramLink.match(/\?start=([^&]+)/);
         const startParameter = startMatch ? startMatch[1] : 'NO_START_PARAM';
         const linkMatches = (startParameter === shortId);
@@ -537,6 +600,7 @@
           ...(currentFirebaseData || {}),
           ...clickData
         };
+        saveLastAdSnapshot(shortId, currentTrackingId, currentParameterType, currentFirebaseData);
         await set(ref(database, `kgsharks_fbclids/${shortId}`), currentFirebaseData);
         return true;
       } catch (error) {
@@ -573,6 +637,8 @@
 
       const shortId = generateShortId();
       currentShortId = shortId;
+      currentTrackingId = trackingId;
+      currentParameterType = parameterType;
 
       button.href = `https://t.me/KGSharksPoker_bot?start=${shortId}`;
 
@@ -597,14 +663,25 @@
         loading.style.display = 'none';
       });
     } else {
-      button.href = 'https://t.me/KGSharksPoker_bot?start=NOFBCLID';
+      const lastAdSnapshot = loadLastAdSnapshot();
+      if (lastAdSnapshot) {
+        currentShortId = lastAdSnapshot.shortId;
+        currentTrackingId = lastAdSnapshot.trackingId;
+        currentParameterType = lastAdSnapshot.parameterType;
+        currentFirebaseData = lastAdSnapshot.firebaseData;
+        button.href = `https://t.me/KGSharksPoker_bot?start=${currentShortId}`;
+        console.log('Using last advertising short ID from browser:', currentShortId);
+      } else {
+        button.href = 'https://t.me/KGSharksPoker_bot?start=NOFBCLID';
+      }
 
       if (typeof fbq !== 'undefined') {
         fbq('trackCustom', 'ProkladkaWithoutFbclid', {
           full_url: fullUrl,
           referrer: document.referrer || 'direct',
           timestamp: timestamp,
-          reason: 'tracking_id_missing'
+          reason: lastAdSnapshot ? 'last_short_id_reused' : 'tracking_id_missing',
+          fbclid_short: lastAdSnapshot ? lastAdSnapshot.shortId : null
         });
       }
     }
