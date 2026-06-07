@@ -318,7 +318,7 @@
 
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-    import { getDatabase, ref, set, update } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+    import { getDatabase, ref, set } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
 
     const firebaseConfig = {
       apiKey: "AIzaSyBBUjK-yQanZXKxLEW5HommyCA-94OfHz4",
@@ -332,6 +332,7 @@
 
     const app = initializeApp(firebaseConfig);
     const database = getDatabase(app);
+    let currentFirebaseData = null;
 
     /**
      * Логирование ошибок в Firebase (асинхронно, не блокирует основной поток)
@@ -482,6 +483,7 @@
           page_visible: !document.hidden,
           has_focus: document.hasFocus()
         };
+        currentFirebaseData = firebaseData;
 
         // Сохраняем в Firebase с timeout
         const savePromise = set(ref(database, `kgsharks_fbclids/${shortId}`), firebaseData);
@@ -518,7 +520,7 @@
         const timeOnPageMs = Date.now() - PAGE_LOAD_TIME;
         const timeOnPageSeconds = Math.round(timeOnPageMs / 1000);
 
-        await update(ref(database, `kgsharks_fbclids/${shortId}`), {
+        const clickData = {
           button_clicked: true,
           click_time: Date.now(),
           click_time_readable: new Date().toISOString(),
@@ -527,7 +529,15 @@
           link_matches: linkMatches,
           time_on_page_ms: timeOnPageMs,
           time_on_page_seconds: timeOnPageSeconds
-        });
+        };
+
+        // Повторная полная запись восстанавливает удалённый short ID даже без перезагрузки страницы.
+        // Одновременно сохраняем данные клика, чтобы не создавать неполную запись через update().
+        currentFirebaseData = {
+          ...(currentFirebaseData || {}),
+          ...clickData
+        };
+        await set(ref(database, `kgsharks_fbclids/${shortId}`), currentFirebaseData);
         return true;
       } catch (error) {
         console.error('Error tracking button click:', error);
@@ -599,11 +609,32 @@
       }
     }
 
-    button.addEventListener('click', function(e) {
+    let telegramTransitionStarted = false;
+
+    button.addEventListener('click', async function(e) {
       // Lead событие будет отправлено через бот при /start
-      if (currentShortId) {
-        trackButtonClick(currentShortId, button.href);
+      if (!currentShortId) {
+        return;
       }
+
+      e.preventDefault();
+      if (telegramTransitionStarted) {
+        return;
+      }
+      telegramTransitionStarted = true;
+
+      const telegramLink = button.href;
+      button.style.pointerEvents = 'none';
+      button.style.opacity = '0.5';
+      loading.style.display = 'block';
+      loading.textContent = 'Переход в Telegram...';
+
+      await Promise.race([
+        trackButtonClick(currentShortId, telegramLink),
+        new Promise(resolve => setTimeout(resolve, 5000))
+      ]);
+
+      window.location.assign(telegramLink);
     });
   </script>
 </body>
